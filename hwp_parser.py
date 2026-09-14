@@ -69,7 +69,7 @@ class HWPParser:
                                 chars.append("\n")
                             elif code == 9:
                                 chars.append("\t")
-                            elif code >= 32:
+                            elif 32 <= code < 0xD800 or 0xE000 <= code <= 0xFFFF:
                                 chars.append(chr(code))
                         p = "".join(chars).strip()
                         if p:

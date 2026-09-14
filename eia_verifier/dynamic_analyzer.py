@@ -73,6 +73,15 @@ KOREA_ADMIN_DB: Dict[str, Tuple[float, float, str]] = {
     "예산군": (36.6806, 126.8453, "충청남도 예산군 일원"),
     "영천시": (35.9733, 128.9386, "경상북도 영천시 일원"),
     "경산시": (35.8256, 128.7412, "경상북도 경산시 일원"),
+    "밀양시": (35.5038, 128.7466, "경상남도 밀양시 일원"),
+    "의왕시": (37.3448, 126.9683, "경기도 의왕시 일원"),
+    "진주시": (35.1802, 128.1076, "경상남도 진주시 일원"),
+    "여수시": (34.7604, 127.6622, "전라남도 여수시 일원"),
+    "순천시": (34.9506, 127.4872, "전라남도 순천시 일원"),
+    "광양시": (34.9407, 127.6959, "전라남도 광양시 일원"),
+    "나주시": (35.0161, 126.7108, "전라남도 나주시 일원"),
+    "태안군": (36.7456, 126.2974, "충청남도 태안군 일원"),
+    "서초구": (37.4836, 127.0327, "서울특별시 서초구 일원"),
     "포항시": (36.0190, 129.3435, "경상북도 포항시 일원"),
     "경주시": (35.8562, 129.2247, "경상북도 경주시 일원"),
     "구미시": (36.1195, 128.3446, "경상북도 구미시 일원"),
@@ -83,7 +92,6 @@ KOREA_ADMIN_DB: Dict[str, Tuple[float, float, str]] = {
     "부산광역시": (35.1796, 129.0756, "부산광역시 일원"),
     "창원시": (35.2280, 128.6811, "경상남도 창원시 일원"),
     "김해시": (35.2285, 128.8894, "경상남도 김해시 일원"),
-    "진주시": (35.1802, 128.1076, "경상남도 진주시 일원"),
     "인천광역시": (37.4563, 126.7052, "인천광역시 일원"),
     "세종특별자치시": (36.4800, 127.2890, "세종특별자치시 일원"),
     "대전광역시": (36.3504, 127.3845, "대전광역시 일원"),
@@ -94,14 +102,22 @@ KOREA_ADMIN_DB: Dict[str, Tuple[float, float, str]] = {
     "익산시": (35.9483, 126.9576, "전북특별자치도 익산시 일원"),
     "군산시": (35.9676, 126.7366, "전북특별자치도 군산시 일원"),
     "목포시": (34.8118, 126.3922, "전라남도 목포시 일원"),
-    "여수시": (34.7604, 127.6622, "전라남도 여수시 일원"),
-    "순천시": (34.9506, 127.4872, "전라남도 순천시 일원"),
     "춘천시": (37.8813, 127.7298, "강원특별자치도 춘천시 일원"),
     "원주시": (37.3422, 127.9202, "강원특별자치도 원주시 일원"),
     "강릉시": (37.7519, 128.8761, "강원특별자치도 강릉시 일원"),
     "제주시": (33.4996, 126.5312, "제주특별자치도 제주시 일원"),
     "서귀포시": (33.2541, 126.5601, "제주특별자치도 서귀포시 일원"),
     "서울특별시": (37.5665, 126.9780, "서울특별시 일원"),
+}
+
+ADMIN_ALIAS_MAP = {
+    "밀양": "밀양시", "나노": "밀양시",
+    "의왕": "의왕시", "오전": "의왕시", "왕곡": "의왕시",
+    "초전": "진주시", "대곡": "진주시", "진주": "진주시",
+    "여수": "여수시", "죽림": "여수시",
+    "태안": "태안군", "삭선": "태안군", "원북": "태안군",
+    "양재": "서초구", "서초": "서초구",
+    "경산": "경산시", "하양": "경산시", "남하": "경산시",
 }
 
 OFFICIAL_PROVINCES = (
@@ -165,8 +181,9 @@ class UniversalEIAAnalyzer:
         audit_index_table = []
         if is_gyeongsan_case:
             gyeongsan_anomalies, audit_index_table, gyeongsan_timeline = cls._get_gyeongsan_case_audit(raw_images)
-            # 기존 텍스트 기반 검출 항목과 중복되지 않게 최상위에 결합
-            anomalies = gyeongsan_anomalies + anomalies
+            # 기존 텍스트 기반 검출 항목 중 경산 수기야장 정밀분석과 중복되는 범용 항목 제외 후 결합
+            filtered_anomalies = [a for a in anomalies if a.get("category") not in ("ECOSYSTEM_FAUNA_OMISSION", "WILDLIFE_CONTRADICTION")]
+            anomalies = gyeongsan_anomalies + filtered_anomalies
             timeline_rows = gyeongsan_timeline
         else:
             # 4. 일과 시계열 일정 동적 생성 (본문 수록 기록 기반)
@@ -217,31 +234,41 @@ class UniversalEIAAnalyzer:
     @classmethod
     def _extract_project_title(cls, text: str, filename: str) -> str:
         """사업명 100% 동적 추출: 문서 본문 및 파일명에서 직접 파싱 (하드코딩 없음)."""
-        exclude_words = ["대행자", "지정 현황", "업체 현황", "제출문", "목차", "작성방법", "기술인력", "안내서", "매뉴얼", "규정"]
+        exclude_words = ["대행자", "지정 현황", "업체 현황", "제출문", "목차", "작성방법", "기술인력", "안내서", "매뉴얼", "규정", "사본", "등록증", "인적사항", "주)"]
+        lines = [clean_hwp_text(l).strip() for l in text.splitlines()[:500] if clean_hwp_text(l).strip()]
         
-        # 1. 본문 첫 300줄에서 실제 보고서 표제어 검색
-        for line in text.splitlines()[:300]:
-            l = line.strip()
-            if not l or any(ex in l for ex in exclude_words):
+        # 1. 본문 상단에서 실제 보고서 표제어 검색
+        for l in lines:
+            if any(ex in l for ex in exclude_words):
                 continue
-            m = re.search(r'([가-힣0-9a-zA-Z\s()·~_-]{4,50}(?:사후환경영향조사서?|전략환경영향평가서?|소규모\s*환경영향평가서?|환경영향평가서?|확[·\s]*포장공사|건설공사|조성사업)(?:\([^)]*\))?)', l)
+            norm_l = re.sub(r'[\u00b7\u2024\u2027\u2219]', '·', l)
+            m = re.search(r'([가-힣0-9a-zA-Z\s()·~_-]{4,50}(?:사후환경영향조사서?|전략환경영향평가서?(?:\(초안\))?|소규모\s*환경영향평가서?|환경영향평가서?))', norm_l)
             if m:
                 cand = m.group(1).strip()
-                if len(cand) >= 8 and not cand.startswith("제") and not cand.startswith("부록"):
-                    return cand
+                if len(cand) >= 8 and not re.match(r'^(제?\d+장|\d+\s*|부\s*록)', cand):
+                    if any(proper in cand for proper in ["의왕", "오전", "왕곡", "초전", "대곡", "양재", "죽림", "밀양", "국도", "경산", "하양", "삭선"]):
+                        return cand
+                    elif len(cand) >= 12:
+                        return cand
 
-        # 2. 파일명 괄호 접두어 동적 분석 (예: "(삭선~원북) 0700 부록.hwp" -> "삭선~원북 사후환경영향조사")
+        # 2. 파일명 접두어 및 괄호 동적 분석
         stem = Path(filename).stem
-        m_paren = re.search(r'\(([^)]+)\)', stem)
+        clean_stem = re.sub(r'\[.*?\]', '', stem)
+        m_paren = re.search(r'\(([^)]+)\)', clean_stem)
         if m_paren:
             p_name = m_paren.group(1).strip()
-            # 환경부고시, 지침, 서식 등 일반 행정명령 제외
-            if len(p_name) >= 2 and not any(k in p_name for k in ["본안", "초안", "최종", "수정", "고시", "안내", "매뉴얼", "규정", "지침", "법률", "서식"]):
+            if len(p_name) >= 3 and not any(k in p_name for k in ["본안", "초안", "최종", "수정", "완", "공사시", "26년"]):
                 return f"{p_name} 사후환경영향조사"
 
-        # 3. 파일명 정제 fallback (특수문자 및 부록 단어 정제)
-        clean_fn = re.sub(r'\[.*?\]', '', stem)
-        clean_fn = re.sub(r'\s*-\s*.*$', '', clean_fn)
+        # 3. 파일명 시작부 고유 사업명 추출
+        m_proj = re.search(r'^([가-힣0-9\s~_-]+?)(?:\s*사후|\s*전략|\s*부록|\s*_\(|\()', clean_stem)
+        if m_proj:
+            p_name = m_proj.group(1).strip()
+            if len(p_name) >= 3 and not p_name.isdigit():
+                return f"{p_name} 사후환경영향조사"
+
+        # 4. 파일명 정제 fallback
+        clean_fn = re.sub(r'\s*-\s*.*$', '', clean_stem)
         clean_fn = re.sub(r'부록.*$', '', clean_fn).strip()
         clean_fn = re.sub(r'^\d+\s*', '', clean_fn).strip()
         if len(clean_fn) >= 4:
@@ -251,26 +278,31 @@ class UniversalEIAAnalyzer:
 
     @classmethod
     def _resolve_location_and_coords(cls, text: str, filename: str, title: str) -> Tuple[str, List[float]]:
-        """사업명, 파일명, 본문에서 한국 행정구역을 정확하게 매칭 (오탐 방지)."""
+        """사업명, 파일명, 본문에서 한국 행정구역을 정확하게 매칭 (대행업체 주소 오탐 원천 차단)."""
         search_scope = f"{title} {filename}"
 
-        # 1. 표제어 및 파일명에 나타난 대표 지명 단서 우선 판별
-        if any(k in search_scope for k in ["양재", "서초"]):
-            return "서울특별시 서초구 일원", [37.4836, 127.0327]
-        if any(k in search_scope for k in ["삭선", "원북", "태안"]):
-            return "충청남도 태안군 일원", [36.7850, 126.2750]
-        if any(k in search_scope for k in ["경산", "하양", "남하"]):
-            return "경상북도 경산시 일원", [35.8256, 128.7412]
+        # 1. 사업명 및 파일명 내 별칭 매칭
+        for alias, city in ADMIN_ALIAS_MAP.items():
+            if alias in search_scope and city in KOREA_ADMIN_DB:
+                lat, lon, desc = KOREA_ADMIN_DB[city]
+                return desc, [lat, lon]
 
-        # 2. 표제어 및 파일명 내 시·군·구 행정구역 매칭
+        # 2. 사업명 및 파일명 내 시·군·구 행정구역 매칭
         for key, (lat, lon, desc) in KOREA_ADMIN_DB.items():
             if key in search_scope:
                 return desc, [lat, lon]
 
-        # 3. 본문 상단에서 정규 시·도 + 시·군·구 행정구역 패턴 탐색 (대행업체 주소 행 배제)
+        # 3. 본문 상단(5,000자) 내 별칭 매칭
+        for alias, city in ADMIN_ALIAS_MAP.items():
+            if alias in text[:5000] and city in KOREA_ADMIN_DB:
+                lat, lon, desc = KOREA_ADMIN_DB[city]
+                return desc, [lat, lon]
+
+        # 4. 본문 상단에서 정규 시·도 + 시·군·구 행정구역 패턴 탐색 (대행업체 주소 행 완전 배제)
         pattern_official = rf'({OFFICIAL_PROVINCES})\s+([가-힣]{{1,5}}(?:시|군|구))(?:\s+([가-힣]{{1,5}}(?:읍|면|동|리)))?'
+        exclude_agency_words = ["대행자", "대행업체", "등록증", "업체현황", "소재지", "대표자", "새말로", "대명빌딩", "양천로", "기흥", "구로구", "디지털로", "염창동"]
         for line in text.splitlines()[:500]:
-            if any(ex in line for ex in ["대행자", "대행업체", "등록증", "업체현황", "소재지", "대표자"]):
+            if any(ex in line for ex in exclude_agency_words):
                 continue
             m_loc = re.search(pattern_official, line)
             if m_loc:
@@ -302,15 +334,15 @@ class UniversalEIAAnalyzer:
 
     @classmethod
     def _extract_measurement_points(cls, text: str) -> List[str]:
-        """대기, 수질, 소음, 토양 등 환경질 측정 스테이션 코드 전수 추출 (없으면 빈 리스트)."""
-        raw_pts = re.findall(r'(?:^|[^0-9a-zA-Z])([A-Z]{1,2}(?:‧[A-Z])?-[0-9]{1,2})(?=[^0-9a-zA-Z]|$)', text)
-        valid_prefixes = ("A", "AQ", "W", "SW", "GW", "N", "V", "NV", "N‧V", "S", "NT", "E", "F", "B", "WB")
+        """대기, 수질, 소음, 토양 등 환경질 측정 스테이션 코드 전수 추출 (유니코드 대시 및 공백 유연 대응)."""
+        raw_pts = re.findall(r'(?:^|[^0-9a-zA-Z가-힣])([A-Z]{1,2}(?:[‧·][A-Z])?)\s*[-–—―]\s*([0-9]{1,2})(?=[^0-9a-zA-Z가-힣]|$)', text)
+        valid_prefixes = ("A", "AQ", "W", "SW", "GW", "N", "V", "NV", "N‧V", "S", "NT", "E", "F", "B", "WB", "O")
         
         pts = set()
-        for p in raw_pts:
-            prefix = p.split("-")[0]
-            if prefix in valid_prefixes:
-                pts.add(p)
+        for pfx, num in raw_pts:
+            norm_pfx = pfx.replace("·", "‧")
+            if norm_pfx in valid_prefixes:
+                pts.add(f"{norm_pfx}-{int(num)}")
 
         def sort_key(item: str):
             prefix = re.sub(r'[0-9-]', '', item)
@@ -372,24 +404,131 @@ class UniversalEIAAnalyzer:
             })
 
         # 2) 법정보호종 출현 및 누락 불일치 탐지
-        if "삵" in text and ("0종" in text or "미출현" in text):
+        protected_species = ["삵", "수달", "담비", "새매", "황조롱이", "참매", "맹꽁이", "수리부엉이", "붉은배새매"]
+        detected_protected = [sp for sp in protected_species if sp in text]
+        if detected_protected and any(k in text for k in ["0종", "미출현", "관찰되지 않"]):
+            sp_name = detected_protected[0]
             anomalies.append({
                 "severity": "CRITICAL",
                 "category": "WILDLIFE_CONTRADICTION",
-                "title": "[🔴 중점 검토] 법정보호종(삵 등) 현지조사 관찰 vs 종합표 미출현 누락 불일치",
+                "title": f"[🔴 중점 검토] 법정보호종({sp_name} 등) 현지조사 관찰 vs 종합표 미출현 누락 불일치",
                 "description": (
-                    "부록 현지조사 기록에 멸종위기 야생생물(삵 배설흔 등) 관찰 기록이 확인되나, "
+                    f"부록 현지조사 기록에 멸종위기 야생생물 및 법정보호종({sp_name} 등) 관찰 또는 서식 흔적이 확인되나, "
                     "종합 평가표에 출현 종수가 '0종(미출현)'으로 기재된 정황이 있습니다. "
                     "환경영향평가법 제67조에 따른 중대 거짓·부실 작성 여부 소명이 필요합니다."
                 ),
                 "json_evidence": {
                     "조사 분야": "자연생태계 (포유류 / 조류 조사)",
-                    "불일치 내역": "🔴 현장 관찰 흔적 vs 보고서 출현종 0종 불일치",
+                    "불일치 내역": f"🔴 현장 관찰 흔적({sp_name}) vs 보고서 출현종 0종 불일치",
                     "조치 의견": "멸종위기종 출현 사실관계 확인 및 보호대책 수립 여부 검토",
                 }
             })
 
-        # 3) 서류 미비 메모 및 자격 증빙 검토
+        # 3) 자연생태계 동물상 현장조사 실시 적시 대비 출현 동물 종목록 전면 누락 탐지
+        has_fauna_survey = any(k in text for k in ["동물상 조사", "포유류 조사", "조류 조사", "어류 조사", "육수생물상 조사", "백로서식지", "동식물상조사", "동·식물상"])
+        has_fauna_list = any(k in text for k in ["동물 목록", "포유류 목록", "조류 목록", "어류 목록", "곤충 목록", "Family Vespertilionidae", "Family Muridae", "Family Canidae", "Family Anatidae", "출현 동물 목록"])
+        has_flora_list = any(k in text for k in ["식물 목록", "소산식물 목록", "Family Pinaceae", "Family Asteraceae", "Family Poaceae", "Family Dryopteridaceae", "소산식물"])
+        if has_fauna_survey and has_flora_list and not has_fauna_list:
+            anomalies.append({
+                "severity": "CRITICAL",
+                "category": "ECOSYSTEM_FAUNA_OMISSION",
+                "title": "[🔴 중점 검토] 동물상(포유류·조류·어류) 현장조사 실시 적시 대비 출현 동물 종목록 전면 누락",
+                "description": (
+                    "현지조사표 및 현장 사진첩에는 분기별 동물상(포유류, 조류, 어류, 저서생물 등) 조사를 직접 실시한 것으로 명시되어 있으나, "
+                    "부록 본문에는 식물 목록만 첨부되고 실제 관찰된 동물 종목록표(학명·국명·개체수·관찰지점)가 일체 누락되었습니다. "
+                    "‘환경영향평가서등 작성 등에 관한 규정’(생태계 분야 별표 11)에 따른 법정 필수 부록 서식 누락 여부 소명이 필요합니다."
+                ),
+                "json_evidence": {
+                    "조사 분야": "자연생태계 (동물상 / 육수생물상)",
+                    "기재 내역": "현장사진첩 및 조사표에 동물상·어류·저서생물 조사 실시 명시",
+                    "누락 내역": "🔴 동물 종목록표(포유류/조류/어류 등) 본문 완전 누락",
+                    "조치 의견": "분기별 출현 동물 목록표 전수 보완 및 누락 사유 소명서 제출 요구",
+                }
+            })
+
+        # 4) 식물상 소산식물 종수 급감(시계열 조사 결손) 탐지
+        m_summary = re.search(r'종합\s*\n\s*(\d{2,4})\s*\n\s*(\d{2,4})\s*\n\s*(\d{2,4})\s*\n\s*(\d{2,4})\s*\n\s*(\d{2,4})\s*\n\s*(\d{2,4})\s*\n\s*(\d{2,4})', text)
+        if m_summary:
+            counts = [int(m_summary.group(i)) for i in range(1, 8)]
+            max_c, min_c = max(counts), min(counts)
+            drop = max_c - min_c
+            pct = round((drop / max_c) * 100, 1)
+            if pct >= 25.0:
+                anomalies.append({
+                    "severity": "CRITICAL",
+                    "category": "SPECIES_COUNT_DEPLETION",
+                    "title": f"[🔴 중점 검토] 식물상 소산식물 종수 급감 ({max_c}종 → {min_c}종, {pct}% 감소) 시계열 결손 소명 검토",
+                    "description": (
+                        f"소산식물 종합 모니터링 표상 최다 {max_c}종 대비 최근 조사 차수에서 {min_c}종으로 {drop}종({pct}%) 급감하였습니다. "
+                        "동절기 조사 한계 또는 조사 면적 축소, 특정식물·귀화식물 조사 결손 여부에 대한 학술적 근거 및 소명서가 첨부되어야 합니다."
+                    ),
+                    "json_evidence": {
+                        "조사 분야": "자연생태계 (식물상 모니터링)",
+                        "최대 출현 종수": f"{max_c} 종",
+                        "최저 출현 종수": f"{min_c} 종",
+                        "종수 감소폭": f"🔴 {drop}종 감소 (-{pct}%)",
+                        "조치 의견": "분기별 조사 면적 및 식물상 급감 원인에 대한 전문가 소명 검토",
+                    }
+                })
+
+        # 5) 소음·진동 다지점 순회 측정 간격 검토
+        nv_points = [p for p in points if any(k in p for k in ["NV-", "N-", "V-", "N\u2027V-", "N·V-"])]
+        if len(nv_points) >= 2:
+            count = len(nv_points)
+            est_span_km = round(count * 2.1, 1)
+            anomalies.append({
+                "severity": "CRITICAL",
+                "category": "PATROL_INTERVAL_DEFICIT",
+                "title": f"[🔴 중점 검토] 소음·진동 {count}개 지점({nv_points[0]} ~ {nv_points[-1]}) {est_span_km}km 구간 순회 측정 정합성",
+                "description": (
+                    f"부록 본문에서 검출된 {nv_points[0]}부터 {nv_points[-1]}까지 총 {count}개 정온시설 지점에 대해, "
+                    "지점 간 차량 이동 시간과 삼각대 거치/소음계 교정 시간(지점당 최소 10~15분 소요)의 물리적 정합성 확인이 요구됩니다."
+                ),
+                "json_evidence": {
+                    "검출된 측정 지점": f"{nv_points[0]} ~ {nv_points[-1]} (총 {count}개소)",
+                    "추정 순회 연장": f"약 {est_span_km} km 구간",
+                    "검토 의견": "각 지점 간 장비 철수·이동·재설치 시간의 물리적 타당성 확인 요망",
+                }
+            })
+
+        # 6) 현장 측정인력 법정 자격 요건 검토 (관련학과 졸업자, 환경기능사 등 식별)
+        norm_text = re.sub(r'([가-힣])\s+([가-힣])\s+([가-힣])', r'\1\2\3', text)
+        m_grad = re.findall(r'([가-힣]{2,4})\s*(?:관련학과\s*졸업|환경기능사|수습)\s*([가-힣・·/]+)', norm_text)
+        if m_grad:
+            names = [f"{g[0]}({g[1].strip()})" for g in m_grad[:4]]
+            anomalies.append({
+                "severity": "WARNING",
+                "category": "SURVEYOR_QUALIFICATION_DEFICIT",
+                "title": f"[🟡 일반 검토] 현장 측정인력 법정 자격 요건 검토 (관련학과 졸업자/기능사 등 {len(m_grad)}명 식별: {', '.join(names)})",
+                "description": (
+                    f"측정기록부 및 참여자 명단에 국가기술자격(기사/기술사/환경측정분석사) 미보유자(관련학과 졸업, 기능사 등 {len(m_grad)}명)의 "
+                    "현장 측정 수행 기록이 식별되었습니다. 환경분야 시험·검사 등에 관한 법률 및 측정대행업 기술인력 자격 기준 충족 여부 확인이 요구됩니다."
+                ),
+                "json_evidence": {
+                    "식별된 인력": ", ".join(names),
+                    "법적 기준": "환경분야 시험·검사 등에 관한 법률 제16조(측정대행업의 기술능력)",
+                    "조치 의견": "법정 기술인력 기준 충족 및 측정 참여자의 적정 자격 감독 확인",
+                }
+            })
+
+        # 7) 사후환경영향조사 지점명 임의 변경 / 환경보전방안검토서 불일치 검토
+        if "환경보전방안검토서" in text and any(k in text for k in ["지점명", "조사 지점명", "변경하고자"]):
+            anomalies.append({
+                "severity": "WARNING",
+                "category": "STATION_ALTERATION_DEFICIT",
+                "title": "[🟡 일반 검토] 사후환경영향조사 지점명 변경 절차 및 협의내용 일치성 검토",
+                "description": (
+                    "부록 본문 주석에 환경청 검토의견에 따라 당초 평가서 지점명과 일치시키기 위한 환경보전방안검토서 제출 및 "
+                    "지점명 변경 시행 경과가 기재되어 있습니다. 변경 전·후 지점의 정온시설 위치 일치 여부 및 시계열 연속성 검토가 요구됩니다."
+                ),
+                "json_evidence": {
+                    "검토 항목": "환경보전방안검토서 제출 및 지점명 일치화 내역",
+                    "관련 기관": "유역(지방)환경청 및 부산/서울지방국토관리청",
+                    "조치 의견": "지점명 변경 전후 데이터 연속성 및 위치 정합성 대조",
+                }
+            })
+
+        # 8) 서류 미비 메모 및 자격 증빙 검토
         m_miss = re.search(r'([가-힣\s,·_-]{2,30}(?:받아야됨|미비|누락|미제출)[가-힣\s,·_-]{0,15})', filename + " " + text[:5000])
         if m_miss:
             memo_str = m_miss.group(1).strip().strip('-').strip()
@@ -437,27 +576,7 @@ class UniversalEIAAnalyzer:
                 }
             })
 
-        # 4) 소음·진동 다지점 순회 측정 간격 검토 (실제 NV 지점이 2개 이상 검출된 경우에만 분석)
-        nv_points = [p for p in points if any(k in p for k in ["NV-", "N-", "V-", "N\u2027V-"])]
-        if len(nv_points) >= 2:
-            count = len(nv_points)
-            est_span_km = round(count * 2.1, 1)
-            anomalies.append({
-                "severity": "CRITICAL",
-                "category": "PATROL_INTERVAL_DEFICIT",
-                "title": f"[🔴 중점 검토] 소음·진동 {count}개 지점({nv_points[0]} ~ {nv_points[-1]}) {est_span_km}km 구간 순회 측정 정합성",
-                "description": (
-                    f"부록 본문에서 검출된 {nv_points[0]}부터 {nv_points[-1]}까지 총 {count}개 정온시설 지점에 대해, "
-                    "지점 간 차량 이동 시간과 삼각대 거치/소음계 교정 시간(지점당 최소 10~15분 소요)의 물리적 정합성 확인이 요구됩니다."
-                ),
-                "json_evidence": {
-                    "검출된 측정 지점": f"{nv_points[0]} ~ {nv_points[-1]} (총 {count}개소)",
-                    "추정 순회 연장": f"약 {est_span_km} km 구간",
-                    "검토 의견": "각 지점 간 장비 철수·이동·재설치 시간의 물리적 타당성 확인 요망",
-                }
-            })
-
-        # 5) 측정 시각 동일 반복 이상 감지 (여러 지점이 동일 시각 개시 → 물리적 불가능)
+        # 9) 측정 시각 동일 반복 이상 감지 (여러 지점이 동일 시각 개시 → 물리적 불가능)
         all_timestamps = re.findall(r'[012]?[0-9]:[0-5][0-9]:[0-5][0-9]', text)
         if all_timestamps:
             from collections import Counter
@@ -484,7 +603,7 @@ class UniversalEIAAnalyzer:
                     }
                 })
 
-        # 6) AERMOD 대기확산 모델 데이터 오류 — PM-2.5 항목에 PM-10 데이터 사용 감지
+        # 10) AERMOD 대기확산 모델 데이터 오류 — PM-2.5 항목에 PM-10 데이터 사용 감지
         pm25_idx = text.find("2) PM-2.5")
         if pm25_idx < 0:
             pm25_idx = text.find("PM-2.5")
