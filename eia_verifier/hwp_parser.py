@@ -142,3 +142,14 @@ class HWPParser:
                 self._fp.close()
             except Exception:
                 pass
+
+    @classmethod
+    def get_cached_or_raw_image(cls, img_path: Union[str, Path]) -> Optional[bytes]:
+        """이미지 파일 경로에서 바이너리 데이터를 안전하게 로드."""
+        p = Path(img_path)
+        if p.exists() and p.is_file():
+            try:
+                return p.read_bytes()
+            except Exception:
+                return None
+        return None

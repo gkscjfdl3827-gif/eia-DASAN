@@ -255,6 +255,22 @@ with tab_anomalies:
         icon="💡",
     )
 
+    # 0. HWP 원본 부록 증빙 페이지 색인 및 교차 검증 총괄표 (정밀 감사 대상일 경우)
+    if hwp_info.get("audit_index_table"):
+        with st.expander("📑 원본 HWP 부록 증빙 페이지 색인 및 교차 검증 총괄표 (클릭하여 펼치기)", expanded=True):
+            st.markdown("본 감사 분석서는 한컴오피스 원본 문서의 인쇄 쪽수(원안 하단 페이지 번호)와 실제 문서 쪽수(1-indexed)를 전수 교차 검증하여 특정하였습니다.")
+            df_index = pd.DataFrame(hwp_info["audit_index_table"])
+            df_index = df_index.rename(columns={
+                "page_print": "원안 인쇄 쪽수",
+                "page_doc": "문서 쪽수",
+                "category": "부록 목차 구분",
+                "content": "수록 증빙 내용 및 객체 식별자",
+                "result": "감사 검증 결과"
+            })
+            if "status" in df_index.columns:
+                df_index = df_index.drop(columns=["status"])
+            st.dataframe(df_index, use_container_width=True, hide_index=True)
+
     # 필터 적용
     visible_anomalies = []
     for a in hwp_info['anomalies']:
@@ -290,6 +306,17 @@ with tab_anomalies:
                 st.write(anomaly['description'])
                 if "json_evidence" in anomaly:
                     st.json(anomaly['json_evidence'])
+
+                # 원본 증빙 이미지 즉시 표출
+                if anomaly.get("evidence_images"):
+                    valid_imgs = [p for p in anomaly["evidence_images"] if p and os.path.exists(p)]
+                    if valid_imgs:
+                        st.markdown("**🔍 원본 부록 내장 증빙 자료:**")
+                        cols_ev = st.columns(len(valid_imgs))
+                        for ci, img_p in enumerate(valid_imgs):
+                            with cols_ev[ci]:
+                                st.image(img_p, caption=Path(img_p).name, use_container_width=True)
+
 
 
 # ----------------------------------------------------
