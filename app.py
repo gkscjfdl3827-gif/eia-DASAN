@@ -60,9 +60,19 @@ if "current_target_hwp" not in st.session_state:
     st.session_state["current_target_hwp"] = ""
 if "current_part_path" not in st.session_state:
     st.session_state["current_part_path"] = ""
+if "uploader_key" not in st.session_state:
+    st.session_state["uploader_key"] = 0
 
 target_hwp_path = st.session_state.get("current_target_hwp", "")
 part_doc_path = st.session_state.get("current_part_path", "")
+
+def trigger_reset():
+    """모든 업로드 상태 및 캐시를 완전히 초기화하여 이전 파일 데이터 유입을 차단."""
+    st.session_state["current_target_hwp"] = ""
+    st.session_state["current_part_path"] = ""
+    st.session_state["uploader_key"] = st.session_state.get("uploader_key", 0) + 1
+    st.cache_data.clear()
+    st.rerun()
 
 # ----------------------------------------------------
 # 3. 사이드바: 도구 제어 및 필터
@@ -73,10 +83,8 @@ with st.sidebar:
         st.success(f"📄 **분석 대상 문서**:\n`{Path(target_hwp_path).name}`")
         if part_doc_path and os.path.exists(part_doc_path):
             st.caption(f"📑 본안 파트: `{Path(part_doc_path).name}`")
-        if st.button("🔄 다른 부록 검증하기 (초기화)", use_container_width=True):
-            st.session_state["current_target_hwp"] = ""
-            st.session_state["current_part_path"] = ""
-            st.rerun()
+        if st.button("🔄 다른 부록 검증하기 (초기화)", key="sidebar_reset_btn", use_container_width=True):
+            trigger_reset()
     else:
         st.info("👈 우측 화면에서 검증할 HWP/HWPX 부록 문서를 업로드해 주십시오.")
 
@@ -119,15 +127,17 @@ if not target_hwp_path or not os.path.exists(target_hwp_path):
         up_main = st.file_uploader(
             "검증할 환경영향평가 부록 HWP/HWPX 파일을 여기에 끌어다 놓으세요 (최대 2GB)",
             type=["hwp", "hwpx"],
-            key="main_landing_uploader"
+            key=f"main_landing_uploader_{st.session_state['uploader_key']}"
         )
         up_part = st.file_uploader(
             "(선택) 본안 파트보고서 첨부 (HWP, HWPX, PDF, XLSX)",
             type=["hwp", "hwpx", "pdf", "xlsx"],
-            key="main_part_uploader"
+            key=f"main_part_uploader_{st.session_state['uploader_key']}"
         )
         if up_main is not None:
-            td = Path(tempfile.gettempdir()) / "eia_upload"
+            import time
+            unique_prefix = str(int(time.time() * 1000))
+            td = Path(tempfile.gettempdir()) / "eia_upload" / unique_prefix
             td.mkdir(parents=True, exist_ok=True)
             tf = td / up_main.name
             tf.write_bytes(up_main.getvalue())
@@ -138,6 +148,7 @@ if not target_hwp_path or not os.path.exists(target_hwp_path):
                 tf_part.write_bytes(up_part.getvalue())
                 st.session_state["current_part_path"] = str(tf_part)
 
+            st.cache_data.clear()
             st.success(f"파일 수신 완료: {up_main.name}")
             st.rerun()
 
@@ -164,6 +175,7 @@ if not target_hwp_path or not os.path.exists(target_hwp_path):
                     m_part = manual_part.strip().strip('"').strip("'")
                     if m_part and os.path.exists(m_part):
                         st.session_state["current_part_path"] = m_part
+                    st.cache_data.clear()
                     st.success("경로 확인 완료! 분석을 시작합니다.")
                     st.rerun()
                 else:
@@ -203,8 +215,13 @@ if not hwp_info:
     st.error("HWP 문서 분석에 실패하였습니다. 파일 형식을 확인해 주십시오.")
     st.stop()
 
-# 성공 배너 (선택된 파일에서 추출된 정보만 표출)
-st.success(f"✅ 프로젝트 **[{hwp_info['title']}]** 부록 기반 조사경로·시간 분석 및 원시데이터 정밀 검증 완료!")
+# 성공 배너 및 상단 즉시 초기화 버튼 (선택된 파일에서 추출된 정보만 표출)
+c_top_info, c_top_reset = st.columns([4, 1.2])
+with c_top_info:
+    st.success(f"✅ 프로젝트 **[{hwp_info['title']}]** 부록 기반 조사경로·시간 분석 및 원시데이터 정밀 검증 완료!")
+with c_top_reset:
+    if st.button("🔄 다른 부록 검증하기 (초기화)", key="main_top_reset_btn", use_container_width=True):
+        trigger_reset()
 
 # 1. 4대 요약 KPI (물리적 이동시간 및 동선 정합성 지표)
 bk1, bk2, bk3, bk4 = st.columns(4)
@@ -213,7 +230,7 @@ with bk1:
 with bk2:
     bk2.metric("🟡 증빙·목록 검토", f"{hwp_info['warning_count']} 건", help="소산식물 종수 불일치, 분담업체 등록증 및 기술자 명단 미비 확인")
 with bk3:
-    bk3.metric("🚗 1일 출장 이동거리", f"{hwp_info['est_distance_km']} km", help=f"조사기관 본사 ➔ 현장({hwp_info['location_name'].split()[0]}) 고속도로 장거리 출장")
+    bk3.metric("🚗 1일 출장 이동거리", f"{hwp_info['est_distance_km']} km", help=f"조사기관 본사 ➔ 현장({hwp_info.get('location_name', '현장').split()[0] if hwp_info.get('location_name') else '현장'}) 출장 거리")
 with bk4:
     bk4.metric("🧾 대조 영수증·증빙", f"{hwp_info['img_count']} 건 전수", help="부록 내 첨부된 출장 영수증, 하이패스 통행료, 공인성적서, 수기야장 전수")
 
