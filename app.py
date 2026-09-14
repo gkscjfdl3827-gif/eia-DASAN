@@ -16,6 +16,9 @@ from typing import Optional
 BASE_DIR = Path(__file__).resolve().parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+pkg_dir = BASE_DIR / "eia_verifier"
+if pkg_dir.exists() and str(pkg_dir) not in sys.path:
+    sys.path.insert(0, str(pkg_dir))
 
 from PIL import Image
 import folium
@@ -23,8 +26,17 @@ import pandas as pd
 import streamlit as st
 from streamlit_folium import st_folium
 
-from eia_verifier.dynamic_analyzer import UniversalEIAAnalyzer
-from eia_verifier.hwp_parser import HWPParser
+try:
+    from eia_verifier.dynamic_analyzer import UniversalEIAAnalyzer
+    from eia_verifier.hwp_parser import HWPParser
+except (ImportError, ModuleNotFoundError):
+    try:
+        from dynamic_analyzer import UniversalEIAAnalyzer
+        from hwp_parser import HWPParser
+    except Exception as e:
+        import traceback
+        st.error(f"모듈 로드 실패: {e}\n\n{traceback.format_exc()}")
+        st.stop()
 
 st.set_page_config(
     page_title="다산컨설턴트 종합환경부 보고서 검증 포털",
@@ -42,124 +54,31 @@ def analyze_uploaded_hwp(target_hwp_path: str, part_doc_path: Optional[str] = No
 
 
 # ----------------------------------------------------
-# 2. 보안 인증 시스템 (내부 관계자 전용 접근 제어)
+# 2. 세션 상태 관리
 # ----------------------------------------------------
-def check_password() -> bool:
-    """다산컨설턴트 직원 전용 비밀번호 인증."""
-    if st.session_state.get("authenticated", False):
-        return True
+if "current_target_hwp" not in st.session_state:
+    st.session_state["current_target_hwp"] = ""
+if "current_part_path" not in st.session_state:
+    st.session_state["current_part_path"] = ""
 
-    st.markdown(
-        """
-        <div style="max-width: 540px; margin: 40px auto 10px auto; padding: 36px 30px; background: white; border-radius: 16px; border: 1px solid #cbd5e1; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.1); text-align: center;">
-            <div style="font-size: 52px; margin-bottom: 10px;">🔒</div>
-            <h2 style="font-size: 22px; font-weight: 800; color: #0f172a; margin-bottom: 8px; letter-spacing: -0.5px;">다산컨설턴트 종합환경부 보고서 검증 포털</h2>
-            <div style="display:inline-block; background: #dc2626; color: white; padding: 3px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; margin-bottom: 16px;">
-                RESTRICTED ACCESS · 다산컨설턴트 직원 전용
-            </div>
-            <p style="font-size: 13.5px; color: #475569; line-height: 1.65; margin-bottom: 20px;">
-                본 시스템은 <strong>환경영향평가 거짓·부실작성 실증 감사자료</strong>를 포함하고 있어 인가된 관계자만 열람할 수 있습니다.<br>
-                비인가자의 무단 접속 및 외부 유출 시 법적 제재를 받을 수 있습니다.
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    col1, col2, col3 = st.columns([1, 1.3, 1])
-    with col2:
-        with st.form("login_form"):
-            password = st.text_input(
-                "🔑 내부 접속 비밀번호",
-                type="password",
-                placeholder="비밀번호를 입력하세요",
-                help="다산컨설턴트 임직원 공유 암호를 입력하세요."
-            )
-            submit = st.form_submit_button("보안 접속 인증 ➔", use_container_width=True)
-
-        if submit:
-            valid_pw = ["YJ0101", "yj0101"]
-            try:
-                if "ADMIN_PASSWORD" in st.secrets:
-                    valid_pw.append(str(st.secrets["ADMIN_PASSWORD"]))
-                    valid_pw.append(str(st.secrets["ADMIN_PASSWORD"]).lower())
-            except Exception:
-                pass
-
-            if password.strip() in valid_pw:
-                st.session_state["authenticated"] = True
-                st.success("✅ 인증 완료! 대시보드를 불러옵니다...")
-                st.rerun()
-            else:
-                st.error("🚨 비밀번호가 일치하지 않습니다. 인가된 관계자만 접속 가능합니다.")
-
-        st.markdown(
-            "<p style='text-align:center; font-size:12px; color:#64748b; margin-top:14px;'>🔒 TLS/HTTPS 256-bit 암호화 보안 세션</p>",
-            unsafe_allow_html=True
-        )
-
-    return False
-
-
-if not check_password():
-    st.stop()
-
+target_hwp_path = st.session_state.get("current_target_hwp", "")
+part_doc_path = st.session_state.get("current_part_path", "")
 
 # ----------------------------------------------------
-# 3. 사이드바: 순수 파일 선택 및 필터 설정
+# 3. 사이드바: 도구 제어 및 필터
 # ----------------------------------------------------
-desktop_dir = os.path.expanduser(r"~\Desktop")
-found_hwps = sorted(glob.glob(os.path.join(desktop_dir, "*.hwp")) + glob.glob(os.path.join(desktop_dir, "*.hwpx")))
-
 with st.sidebar:
-    st.markdown("### 🛡️ 보안 관리")
-    st.success("🟢 **다산컨설턴트 직원 인증 완료**")
-    if st.button("🚪 안전 로그아웃", use_container_width=True):
-        st.session_state["authenticated"] = False
-        st.rerun()
-    st.divider()
-
-    st.header("📂 검증 대상 보고서 지정")
-    input_source = st.radio(
-        "보고서 등록 방식",
-        ["💻 바탕화면 파일 자동 감지", "📁 브라우저 파일 업로드", "✍️ 직접 파일 경로 입력"],
-        index=0,
-        key="selected_input_source"
-    )
-
-    target_hwp_path = ""
-    part_doc_path = ""
-
-    if input_source.startswith("💻"):
-        options = ["-- 검증할 보고서를 선택하세요 --"]
-        for h in found_hwps:
-            try:
-                sz = os.path.getsize(h) / (1024 * 1024)
-                options.append(f"{os.path.basename(h)} ({sz:.1f} MB)")
-            except Exception:
-                options.append(os.path.basename(h))
-
-        sel_box = st.selectbox("바탕화면 부록 HWP 파일 선택", options, index=1 if len(options) > 1 else 0, key="desktop_file_choice")
-        if sel_box and not sel_box.startswith("--"):
-            fname = sel_box.split(" (")[0]
-            target_hwp_path = os.path.join(desktop_dir, fname)
-            st.caption(f"📂 대상: `{target_hwp_path}`")
-
-    elif input_source.startswith("📁"):
-        uploaded = st.file_uploader("부록 HWP 파일 업로드 (100MB 이하 권장)", type=["hwp", "hwpx"], key="browser_uploader")
-        if uploaded is not None:
-            td = Path(tempfile.gettempdir()) / "eia_upload"
-            td.mkdir(parents=True, exist_ok=True)
-            tf = td / uploaded.name
-            tf.write_bytes(uploaded.getvalue())
-            target_hwp_path = str(tf)
-            st.success(f"업로드 완료: {uploaded.name}")
-
+    st.markdown("### 🛠️ 부록 검증 도구")
+    if target_hwp_path and os.path.exists(target_hwp_path):
+        st.success(f"📄 **분석 대상 문서**:\n`{Path(target_hwp_path).name}`")
+        if part_doc_path and os.path.exists(part_doc_path):
+            st.caption(f"📑 본안 파트: `{Path(part_doc_path).name}`")
+        if st.button("🔄 다른 부록 검증하기 (초기화)", use_container_width=True):
+            st.session_state["current_target_hwp"] = ""
+            st.session_state["current_part_path"] = ""
+            st.rerun()
     else:
-        target_hwp_path = st.text_input("부록 HWP 전체 경로 입력", value="", placeholder=r"C:\Users\dsu\Desktop\보고서.hwp", key="manual_path_input")
-
-    st.divider()
-    part_doc_path = st.text_input("(선택) 본안 보고서 경로 (파트별 보고서 대조)", value="", placeholder=r"C:\Users\dsu\Desktop\본안보고서.hwp", key="manual_part_path")
+        st.info("👈 우측 화면에서 검증할 HWP/HWPX 부록 문서를 업로드해 주십시오.")
 
     st.divider()
     st.subheader("🔍 검증 필터")
@@ -181,36 +100,96 @@ with st.sidebar:
 st.markdown(
     """
     <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); color: white; padding: 22px 28px; border-radius: 14px; margin-bottom: 24px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);">
-        <h1 style="font-size: 25px; font-weight: 800; margin: 0 0 6px 0; color: #ffffff;">🏛️ 다산컨설턴트 종합환경부 보고서 검증 포털</h1>
+        <h1 style="font-size: 25px; font-weight: 800; margin: 0 0 6px 0; color: #ffffff;">🛠️ 환경영향평가 부록 원본 검증 도구</h1>
         <p style="font-size: 13.5px; margin: 0; color: #94a3b8;">
-            환경영향평가서 본안 및 부록 원본 증빙(수기 야장, 측정기록부, 영수증, 하이패스 통행료) 전수 시공간 정합성·모순 자동 검증 시스템
+            사후환경영향조사서 부록(HWP/HWPX)의 원문 텍스트, 측정기록부, 영수증 증빙을 실시간 파싱하여 4대 시공간 정합성 및 거짓·부실 모순을 전수 자동 검증하는 독립형 툴입니다.
         </p>
     </div>
     """,
     unsafe_allow_html=True
 )
 
-# 대상 파일 유무 검증
+# 대상 파일 유무 검증 및 랜딩 페이지 표출
 if not target_hwp_path or not os.path.exists(target_hwp_path):
-    st.info("👈 **좌측 사이드바에서 검증할 보고서(HWP/HWPX)를 선택하거나 업로드해 주십시오.**")
+    st.info("💡 **검증을 진행할 사후환경영향조사서 부록(HWP/HWPX)을 등록해 주십시오.**")
 
-    st.markdown("### 💻 바탕화면에서 감지된 분석 가능 보고서 목록")
-    if found_hwps:
-        for p in found_hwps:
-            try:
-                sz = os.path.getsize(p) / (1024 * 1024)
-                col_a, col_b = st.columns([4, 1])
-                with col_a:
-                    st.write(f"📄 **{os.path.basename(p)}** ({sz:.1f} MB)")
-                with col_b:
-                    if st.button("🔍 즉시 분석", key=f"quick_{os.path.basename(p)}"):
-                        st.session_state["desktop_file_choice"] = f"{os.path.basename(p)} ({sz:.1f} MB)"
-                        st.session_state["selected_input_source"] = "💻 바탕화면 파일 자동 감지"
-                        st.rerun()
-            except Exception:
-                pass
-    else:
-        st.write("바탕화면에 HWP/HWPX 파일이 없습니다. 사이드바에서 직접 업로드해 주십시오.")
+    tab_upload, tab_manual = st.tabs(["📁 브라우저 파일 업로드 (드래그 앤 드롭)", "✍️ 파일 전체 경로 직접 입력"])
+
+    with tab_upload:
+        up_main = st.file_uploader(
+            "검증할 환경영향평가 부록 HWP/HWPX 파일을 여기에 끌어다 놓으세요 (최대 2GB)",
+            type=["hwp", "hwpx"],
+            key="main_landing_uploader"
+        )
+        up_part = st.file_uploader(
+            "(선택) 본안 파트보고서 첨부 (HWP, HWPX, PDF, XLSX)",
+            type=["hwp", "hwpx", "pdf", "xlsx"],
+            key="main_part_uploader"
+        )
+        if up_main is not None:
+            td = Path(tempfile.gettempdir()) / "eia_upload"
+            td.mkdir(parents=True, exist_ok=True)
+            tf = td / up_main.name
+            tf.write_bytes(up_main.getvalue())
+            st.session_state["current_target_hwp"] = str(tf)
+
+            if up_part is not None:
+                tf_part = td / up_part.name
+                tf_part.write_bytes(up_part.getvalue())
+                st.session_state["current_part_path"] = str(tf_part)
+
+            st.success(f"파일 수신 완료: {up_main.name}")
+            st.rerun()
+
+    with tab_manual:
+        with st.form("manual_path_form"):
+            manual_hwp = st.text_input(
+                "부록 HWP/HWPX 파일 전체 경로 입력",
+                value="",
+                placeholder=r"C:\경로\부록보고서.hwp",
+                key="manual_path_input"
+            )
+            manual_part = st.text_input(
+                "(선택) 본안 보고서 전체 경로 입력",
+                value="",
+                placeholder=r"C:\경로\본안보고서.hwp",
+                key="manual_part_input"
+            )
+            manual_submit = st.form_submit_button("검증 시작 ➔", use_container_width=True)
+
+            if manual_submit:
+                m_path = manual_hwp.strip().strip('"').strip("'")
+                if m_path and os.path.exists(m_path):
+                    st.session_state["current_target_hwp"] = m_path
+                    m_part = manual_part.strip().strip('"').strip("'")
+                    if m_part and os.path.exists(m_part):
+                        st.session_state["current_part_path"] = m_part
+                    st.success("경로 확인 완료! 분석을 시작합니다.")
+                    st.rerun()
+                else:
+                    st.error("입력하신 파일 경로가 올바르지 않거나 파일을 찾을 수 없습니다. 경로를 확인해 주십시오.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    c_g1, c_g2 = st.columns(2)
+    with c_g1:
+        st.markdown(
+            """
+            ### 🔍 4대 핵심 정합성 검증 항목
+            * **🌿 생태계 조사야장 vs 본문 대조**: 수기 야장에 자필 기재된 보호종(삵, 새매 등) 및 소산식물 종수 불일치 자동 진단
+            * **⏱️ 출장 동선 및 이동시간 결손**: 수도권 본사/고속도로 IC ➔ 현장 도착 후 연속측정 장비 거치시간(20~30분) 부족 확인
+            * **🔊 다지점 순회 측정 물리적 한계**: 소음·진동 6~10개 지점 순회 간격 및 삼각대 철수/재설치 시간 검토
+            * **📋 분담/재대행업체 자격 증빙**: 부록 표지 명단과 실제 첨부된 환경영향평가업 등록증 유효성 교차 대조
+            """
+        )
+    with c_g2:
+        st.markdown(
+            """
+            ### 💡 이용 안내
+            * 본 시스템은 외부 더미 데이터나 바탕화면 임의 폴더에 연결되지 않으며, **사용자께서 직접 등록하신 파일만을 100% 단독 분석**합니다.
+            * HWP 5.0 OLE 포맷의 원문 텍스트, 표 구조, 내장 BinData 이미지(영수증, 성적서, 현장사진)를 고속으로 자체 파싱합니다.
+            * 분석 결과는 화면에서 실시간 인터랙티브 지도(Esri) 및 시계열 타임라인으로 시각화됩니다.
+            """
+        )
     st.stop()
 
 
