@@ -203,6 +203,40 @@ class UniversalEIAAnalyzer:
                 est_distance = a["distance_km"]
                 break
 
+        # 7. 10대 법정 점검항목 전수 진단 체크리스트 생성
+        checklist_defs = [
+            ("ECOSYSTEM_FAUNA_OMISSION", "자연생태계", "동물상 현장조사 실시 대비 출현 종목록 수록 여부", "조사표/사진첩 기재 대비 부록 내 관찰 종목록(포유류·조류 등) 누락 검토"),
+            ("SPECIES_COUNT_DEPLETION", "자연생태계", "식물상 소산식물 종수 시계열 변동폭(급감 여부) 검토", "차수별 소산식물 총괄표상 25% 이상 또는 50종 이상 급감 결손 여부"),
+            ("WILDLIFE_CONTRADICTION", "자연생태계", "멸종위기 야생생물(삵, 수달 등) 관찰 흔적 대비 종합표 누락 여부", "현지조사 야장/조사표 서식흔 대비 결과보고서 출현종 0종 기재 여부"),
+            ("DOCUMENT_DISCREPANCY", "문서정합성", "본문 현지조사 서술 종수 vs 첨부 표 종수 일치 여부", "원문 본문 서술 종수와 첨부된 종목록 간 수치 불일치 교차 대조"),
+            ("PATROL_INTERVAL_DEFICIT", "소음·진동", "정온시설 순회 측정 구간 연장 및 이동/거치시간 타당성", "소음계 삼각대 거치·교정 시간(지점당 10~15분) 및 차량 이동 동선 정합성"),
+            ("SURVEYOR_QUALIFICATION_DEFICIT", "측정대행업", "측정기록부 참여인력 법정 기술자격 요건 충족 여부", "환경분야 시험검사법에 따른 기사/기술사/환경측정분석사 자격 대조"),
+            ("STATION_ALTERATION_DEFICIT", "행정절차", "사후조사 지점명 임의 변경 및 협의내용 일치성 검토", "환경보전방안검토서 승인 및 당초 환경영향평가서 조사지점명과의 일치 여부"),
+            ("CREDENTIAL_COMPLIANCE", "자격증빙", "측정대행업 등록증 및 재대행(하도급) 승인 유효성", "대행업체 등록증 유효기간 및 재대행 승인비율(30% 이내) 준수 여부"),
+            ("TIMESTAMP_DUPLICATION", "원시데이터", "측정 개시 시각 복수 지점 동시 기록(물리적 불가능) 여부", "원시데이터 기록부상 초 단위 동일 시각 다지점 중복 개시 여부"),
+            ("MODEL_DATA_MISMATCH", "대기질", "AERMOD 대기확산 모델 오염물질 배출계수 일치성", "PM-2.5 항목 산출 시 PM-10 원시데이터 오적용 여부 교차 검증"),
+        ]
+        audit_checklist = []
+        anomaly_cats = {a.get("category"): a for a in anomalies}
+        for cat_key, domain, chk_title, desc in checklist_defs:
+            if cat_key in anomaly_cats:
+                ano = anomaly_cats[cat_key]
+                audit_checklist.append({
+                    "분야": domain,
+                    "점검 항목": chk_title,
+                    "판정 결과": "🔴 중점 검토" if ano.get("severity") == "CRITICAL" else "🟡 일반 검토",
+                    "상세 진단 내용": ano.get("title", desc),
+                    "법적/기술적 기준": desc,
+                })
+            else:
+                audit_checklist.append({
+                    "분야": domain,
+                    "점검 항목": chk_title,
+                    "판정 결과": "🟢 적합 (이상 없음)",
+                    "상세 진단 내용": "본문 텍스트 및 첨부 데이터 분석 결과 결손·모순 없음",
+                    "법적/기술적 기준": desc,
+                })
+
         parser.close()
 
         return {
@@ -226,6 +260,7 @@ class UniversalEIAAnalyzer:
             "map_data": map_data,
             "audit_index_table": audit_index_table,
             "is_gyeongsan_case": is_gyeongsan_case,
+            "audit_checklist": audit_checklist,
         }
 
     # --------------------------------------------------------------------------

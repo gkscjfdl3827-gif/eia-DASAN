@@ -236,12 +236,13 @@ with bk4:
 
 st.divider()
 
-# 메인 4대 탭 구성
-tab_anomalies, tab_timeline, tab_map, tab_gallery = st.tabs([
+# 메인 5대 탭 구성
+tab_anomalies, tab_checklist, tab_timeline, tab_map, tab_gallery = st.tabs([
     "💳 1. 시공간 조사경로 및 모순 분석",
-    "⏱️ 2. 일과 시계열 타임라인 대조표",
-    "🗺️ 3. 현장 조사동선 인터랙티브 지도",
-    "🖼️ 4. 부록 내장 원본 증빙자료 갤러리"
+    "📋 2. 10대 법정 점검항목 전수 체크리스트",
+    "⏱️ 3. 일과 시계열 타임라인 대조표",
+    "🗺️ 4. 현장 조사동선 인터랙티브 지도",
+    "🖼️ 5. 부록 내장 원본 증빙자료 갤러리"
 ])
 
 # ----------------------------------------------------
@@ -263,12 +264,11 @@ with tab_anomalies:
             df_index = df_index.rename(columns={
                 "page_print": "원안 인쇄 쪽수",
                 "page_doc": "문서 쪽수",
-                "category": "부록 목차 구분",
-                "content": "수록 증빙 내용 및 객체 식별자",
-                "result": "감사 검증 결과"
+                "category": "분야",
+                "doc_title": "원본 문서 표제어 및 항목명",
+                "evidence_type": "핵심 증빙 유형",
+                "cross_audit_target": "교차 검증 대조 대상 및 모순 적발 사항",
             })
-            if "status" in df_index.columns:
-                df_index = df_index.drop(columns=["status"])
             st.dataframe(df_index, use_container_width=True, hide_index=True)
 
     # 필터 적용
@@ -318,9 +318,38 @@ with tab_anomalies:
                                 st.image(img_p, caption=Path(img_p).name, use_container_width=True)
 
 
+# ----------------------------------------------------
+# TAB 2: 10대 법정 점검항목 전수 체크리스트
+# ----------------------------------------------------
+with tab_checklist:
+    st.markdown("### 📋 환경부 환경영향평가서등 작성 등에 관한 규정 10대 법정 점검항목 전수 진단")
+    st.info(
+        "💡 본 진단표는 부록 원문 텍스트, 수록 표 구조, 참여인력 명단, 측정기록부, 대행업체 등록증을 상시 전수 교차 검토한 "
+        "**10대 법정 핵심 검증 항목의 정합성 평가 결과**입니다. 결손 및 오류가 발견되지 않은 항목은 '🟢 적합 (이상 없음)'으로 판정됩니다.",
+        icon="💡"
+    )
+
+    if hwp_info.get("audit_checklist"):
+        df_chk = pd.DataFrame(hwp_info["audit_checklist"])
+        st.dataframe(
+            df_chk,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    # 파서 진단 메타데이터 요약
+    with st.expander("🔍 원문 파싱 및 시스템 자가 진단 메타데이터", expanded=True):
+        c_d1, c_d2, c_d3, c_d4 = st.columns(4)
+        c_d1.metric("문서 원문 글자 수", f"{hwp_info.get('text_len', 0):,} 자")
+        c_d2.metric("검출된 측정지점 수", f"{len(hwp_info.get('points', []))} 개")
+        c_d3.metric("검출된 조사 일자", f"{len(hwp_info.get('dates', []))} 개")
+        c_d4.metric("내장 이미지/증빙 수", f"{hwp_info.get('img_count', 0)} 건")
+        st.write(f"**검출된 측정 스테이션 목록:** {hwp_info.get('points', [])}")
+        st.write(f"**식별된 참여 업체/기관:** {hwp_info.get('agencies', [])}")
+
 
 # ----------------------------------------------------
-# TAB 2: 시계열 타임라인 대조표
+# TAB 3: 시계열 타임라인 대조표
 # ----------------------------------------------------
 with tab_timeline:
     st.markdown("### ⏱️ 부록 기록 기반 일과 시계열 타임라인 대조표")
